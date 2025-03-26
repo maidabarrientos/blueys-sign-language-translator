@@ -38,7 +38,7 @@ function createModel(): tf.LayersModel {
 async function preprocessImage(imageTensor: tf.Tensor3D): Promise<tf.Tensor4D> {
   const resized = tf.image.resizeBilinear(imageTensor, [64, 64])
   const expanded = resized.expandDims(0)
-  return expanded.toFloat().div(255)
+  return expanded.toFloat().div(255) as tf.Tensor4D
 }
 
 // Function to train the model

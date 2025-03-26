@@ -60,6 +60,16 @@ const config = {
   				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
   				border: 'hsl(var(--sidebar-border))',
   				ring: 'hsl(var(--sidebar-ring))'
+  			},
+  			detection: {
+  				active: 'hsl(var(--detection-active))',
+  				inactive: 'hsl(var(--detection-inactive))',
+  				warning: 'hsl(var(--detection-warning))',
+  				success: 'hsl(var(--detection-success))'
+  			},
+  			gesture: {
+  				highlight: 'hsl(var(--gesture-highlight))',
+  				marker: 'hsl(var(--gesture-marker))'
   			}
   		},
   		borderRadius: {
@@ -83,11 +93,16 @@ const config = {
   				to: {
   					height: '0'
   				}
+  			},
+  			'hand-pulse': {
+  				'0%, 100%': { opacity: '1' },
+  				'50%': { opacity: '0.5' }
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+  			'hand-pulse': 'hand-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
   		}
   	}
   },

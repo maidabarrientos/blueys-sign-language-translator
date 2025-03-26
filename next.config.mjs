@@ -16,10 +16,41 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  logging: {
+    fetches: {
+      fullUrl: true,
+    },
+  },
   experimental: {
     webpackBuildWorker: true,
     parallelServerBuildTraces: true,
     parallelServerCompiles: true,
+  },
+  async headers() {
+    return [
+      {
+        source: '/models/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable'
+          }
+        ]
+      }
+    ]
+  },
+  webpack: (config) => {
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      path: false,
+      crypto: false,
+    };
+    // Suppress TensorFlow.js kernel registration warnings
+    config.infrastructureLogging = {
+      level: 'error',
+    };
+    return config;
   },
 }
 
