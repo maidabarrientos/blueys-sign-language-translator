@@ -6,6 +6,9 @@ import { SignLanguageModel } from '@/utils/modelLoader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
+import { useSpeechSynthesis } from '@/hooks/useSpeechSynthesis';
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 interface Detection {
   gesture: string;
@@ -27,6 +30,11 @@ export function SignLanguageDetector() {
   const [showTraining, setShowTraining] = useState(false);
   const [initStatus, setInitStatus] = useState<string>('');
   const [handDetected, setHandDetected] = useState(false);
+  const [isWebcamReady, setIsWebcamReady] = useState(false);
+  const [enableVoice, setEnableVoice] = useState(true);
+  const [casualMode, setCasualMode] = useState(true);
+  const { speak, speakCasually, speaking, supported: speechSupported, getEnglishVoice } = useSpeechSynthesis();
+  const lastSpokenText = useRef<string>('');
 
   useEffect(() => {
     const initializeDetector = async () => {
@@ -55,24 +63,41 @@ export function SignLanguageDetector() {
     };
   }, []);
 
+  // Handle webcam readiness
+  const handleWebcamReady = () => {
+    setIsWebcamReady(true);
+  };
+
   const detectSigns = async () => {
     if (!detector || !webcamRef.current?.video) return;
+    
+    // Skip detection if webcam isn't ready
+    if (!isWebcamReady || webcamRef.current.video.readyState !== 4) {
+      requestRef.current = requestAnimationFrame(detectSigns);
+      return;
+    }
 
     try {
+      console.log("Detecting signs...");
       const result = await detector.detectSign(webcamRef.current.video);
-      setHandDetected(detector.isHandCurrentlyDetected());
+      const isHandDetected = detector.isHandCurrentlyDetected();
+      console.log("Hand detected:", isHandDetected, "Result:", result);
+      setHandDetected(isHandDetected);
       
       if (result) {
+        console.log("Setting detection result:", result.gesture, result.confidence);
         setDetection({
           gesture: result.gesture,
           confidence: result.confidence,
           handLandmarks: result.handLandmarks
         });
-      } else if (detector.isHandCurrentlyDetected()) {
+      } else if (isHandDetected) {
         // Hand detected but no gesture recognized
+        console.log("Hand detected but no gesture recognized");
         setDetection(null);
       } else {
         // No hand detected
+        console.log("No hand detected");
         setDetection(null);
       }
     } catch (error) {
@@ -83,10 +108,15 @@ export function SignLanguageDetector() {
   };
 
   useEffect(() => {
-    if (!isLoading) {
-      detectSigns();
+    if (!isLoading && isWebcamReady) {
+      // Add a small delay to ensure webcam is fully initialized
+      const timer = setTimeout(() => {
+        detectSigns();
+      }, 1000);
+      
+      return () => clearTimeout(timer);
     }
-  }, [isLoading]);
+  }, [isLoading, isWebcamReady]);
 
   const handleLanguageChange = (newLanguage: Language) => {
     setIsLoading(true);
@@ -121,6 +151,20 @@ export function SignLanguageDetector() {
     };
   }, [detector]);
 
+  useEffect(() => {
+    // Speak the detected gesture when it changes and voice is enabled
+    if (detection && enableVoice && speechSupported && detection.gesture !== lastSpokenText.current) {
+      lastSpokenText.current = detection.gesture;
+      
+      // Use casual speaking style if enabled, otherwise use normal speech
+      if (casualMode) {
+        speakCasually(detection.gesture, { voice: getEnglishVoice() });
+      } else {
+        speak(detection.gesture, { voice: getEnglishVoice() });
+      }
+    }
+  }, [detection, enableVoice, casualMode, speechSupported, speak, speakCasually, getEnglishVoice]);
+
   return (
     <div className="relative">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
@@ -139,6 +183,7 @@ export function SignLanguageDetector() {
                 height: 960,
                 facingMode: "user",
               }}
+              onUserMedia={handleWebcamReady}
             />
             
             {isLoading && (
@@ -150,6 +195,15 @@ export function SignLanguageDetector() {
               </div>
             )}
 
+            {!isWebcamReady && !isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="text-white font-medium">
+                  <div className="animate-pulse mb-2">Initializing camera...</div>
+                  <div className="text-sm text-white/70">Please allow camera access</div>
+                </div>
+              </div>
+            )}
+
             {/* Camera UI Overlay */}
             <div className="absolute top-4 left-4 flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -157,7 +211,7 @@ export function SignLanguageDetector() {
             </div>
           </div>
 
-          {/* Language Selector */}
+          {/* Language Selector and Voice Toggle */}
           <div className="flex justify-between items-center">
             <Select
               value={language}
@@ -171,6 +225,32 @@ export function SignLanguageDetector() {
                 <SelectItem value="FSL">Filipino Sign Language</SelectItem>
               </SelectContent>
             </Select>
+
+            <div className="flex flex-col space-y-2">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="voice-mode"
+                  checked={enableVoice}
+                  onCheckedChange={setEnableVoice}
+                  disabled={!speechSupported}
+                />
+                <Label htmlFor="voice-mode" className="text-sm text-zinc-300">
+                  Voice Output
+                </Label>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="casual-mode"
+                  checked={casualMode}
+                  onCheckedChange={setCasualMode}
+                  disabled={!enableVoice || !speechSupported}
+                />
+                <Label htmlFor="casual-mode" className="text-sm text-zinc-300">
+                  Friendly Voice
+                </Label>
+              </div>
+            </div>
 
             {/* Training Button - Only show when needed */}
             <Button

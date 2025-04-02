@@ -8,6 +8,8 @@ export class SignLanguageModel {
   private handposeModel: handpose.HandPose | null = null;
   private initStatus: string = "Not started";
   private isHandDetected: boolean = false;
+  private lastApiCallTime: number = 0;
+  private lastResult: { gesture: string; confidence: number; handLandmarks?: number[][] } | null = null;
   
   constructor() {
     this.initStatus = "Initialized";
@@ -40,13 +42,58 @@ export class SignLanguageModel {
     return this.isHandDetected;
   }
 
+  // Check if video is ready for processing
+  private isVideoReady(video: HTMLVideoElement): boolean {
+    return video &&
+           video.readyState === 4 &&
+           video.videoWidth > 0 &&
+           video.videoHeight > 0 &&
+           !video.paused &&
+           !video.ended;
+  }
+
+  // Capture frame from video as base64 image
+  private captureFrame(video: HTMLVideoElement): string {
+    try {
+      const canvas = document.createElement('canvas');
+      // Use higher resolution for better sign recognition
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Flip horizontally if video is mirrored
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        // Draw with high quality
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Higher quality JPEG for better recognition
+        return canvas.toDataURL('image/jpeg', 0.95);
+      }
+    } catch (err) {
+      console.error("Error capturing frame:", err);
+    }
+    return '';
+  }
+
   async estimateHands(video: HTMLVideoElement): Promise<handpose.AnnotatedPrediction[]> {
     if (!this.handposeModel) {
       throw new Error("Handpose model not loaded");
     }
-    const hands = await this.handposeModel.estimateHands(video);
-    this.isHandDetected = hands.length > 0;
-    return hands;
+
+    // Make sure video is ready before processing
+    if (!this.isVideoReady(video)) {
+      console.log("Video not ready yet, skipping hand detection");
+      return [];
+    }
+
+    try {
+      const hands = await this.handposeModel.estimateHands(video);
+      this.isHandDetected = hands.length > 0;
+      return hands;
+    } catch (error) {
+      console.error("Hand estimation error:", error);
+      return [];
+    }
   }
 
   async detectSign(video: HTMLVideoElement): Promise<{ gesture: string; confidence: number; handLandmarks?: number[][] } | null> {
@@ -54,47 +101,115 @@ export class SignLanguageModel {
       return null;
     }
 
-    const hands = await this.estimateHands(video);
-    
-    // No translation if no hand is detected
-    if (hands.length === 0) {
-      this.isHandDetected = false;
+    // Make sure video is ready before processing
+    if (!this.isVideoReady(video)) {
+      console.log("Video not ready yet, skipping sign detection");
       return null;
     }
 
-    this.isHandDetected = true;
-    
-    // Make sure we have a good quality hand detection with clear landmarks
-    const handLandmarks = hands[0].landmarks;
-    
-    // Additional check for hand quality/visibility
-    // You could implement more sophisticated checks here
-    const isHandClearlyVisible = this.isHandClearlyVisible(handLandmarks);
-    if (!isHandClearlyVisible) {
+    try {
+      const hands = await this.estimateHands(video);
+      
+      // No translation if no hand is detected
+      if (hands.length === 0) {
+        this.isHandDetected = false;
+        return null;
+      }
+
+      this.isHandDetected = true;
+      
+      // Get hand landmarks
+      const handLandmarks = hands[0].landmarks;
+      
+      // Only call the API every 2 seconds to avoid excessive API usage
+      const now = Date.now();
+      if (now - this.lastApiCallTime > 2000) {
+        this.lastApiCallTime = now;
+        
+        // Capture the current frame as base64
+        const frameBase64 = this.captureFrame(video);
+        
+        if (frameBase64) {
+          try {
+            // Call OpenAI API to interpret the sign language
+            console.log("Calling OpenAI API for sign language interpretation");
+            
+            const response = await fetch('/api/interpret-sign', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ 
+                image: frameBase64
+              }),
+              // Add timeout to prevent hanging requests
+              signal: AbortSignal.timeout(10000)
+            });
+            
+            if (response.ok) {
+              const data = await response.json();
+              
+              if (data.gesture) {
+                // Don't update if the response is "No sign detected" or "Processing"
+                const lowerGesture = data.gesture.toLowerCase();
+                if (lowerGesture !== "no sign detected" && 
+                    lowerGesture !== "processing" && 
+                    lowerGesture !== "no clear sign") {
+                  
+                  this.lastResult = {
+                    gesture: data.gesture,
+                    confidence: data.confidence || 0.9,
+                    handLandmarks: handLandmarks
+                  };
+                  
+                  console.log("OpenAI interpretation:", data.gesture);
+                } else {
+                  console.log("OpenAI couldn't detect a clear sign");
+                }
+              }
+            } else {
+              let errorDetails = "";
+              try {
+                const errorData = await response.json();
+                errorDetails = JSON.stringify(errorData);
+              } catch {
+                errorDetails = await response.text();
+              }
+              
+              console.error(`Error calling OpenAI API (${response.status}):`, errorDetails);
+              
+              // If there's no previous result, provide a fallback
+              if (!this.lastResult) {
+                console.log("Using fallback for first-time error");
+                this.lastResult = {
+                  gesture: "Processing...",
+                  confidence: 0.5,
+                  handLandmarks: handLandmarks
+                };
+              }
+            }
+          } catch (apiError) {
+            console.error("Error calling API:", apiError);
+          }
+        }
+      }
+      
+      // Return the last result if available
+      return this.lastResult;
+    } catch (error) {
+      console.error("Sign detection error:", error);
       return null;
     }
-    
-    // This is a placeholder for actual sign detection logic
-    // In a real implementation, you would use the model to predict the sign
-    // based on the hand landmarks
-    
-    // Example mock implementation:
-    const mockSigns = ["A", "B", "C", "Hello", "Thank You"];
-    const randomIndex = Math.floor(Math.random() * mockSigns.length);
-    const randomConfidence = 0.7 + Math.random() * 0.3; // Random confidence between 0.7 and 1.0
-    
-    return {
-      gesture: mockSigns[randomIndex],
-      confidence: randomConfidence,
-      handLandmarks: handLandmarks
-    };
   }
   
   // Helper method to determine if a hand is clearly visible
   private isHandClearlyVisible(landmarks: number[][]): boolean {
     // Calculate the average confidence or check for minimum visibility
     // This is a simple placeholder implementation
-    // You could implement more sophisticated checks here
+    
+    if (!landmarks || landmarks.length === 0) {
+      return false;
+    }
     
     // For example, check if the landmarks are within the frame
     for (const point of landmarks) {
