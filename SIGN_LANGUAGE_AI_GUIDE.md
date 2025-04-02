@@ -55,4 +55,4 @@ For API key setup, make sure you have a valid OpenAI API key in your `.env.local
 
 ```
 OPENAI_API_KEY=your-actual-api-key
-``` 
+```

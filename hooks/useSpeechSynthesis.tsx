@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { initPolyfills } from '@/utils/polyfills';
+
+// Initialize polyfills at the module level, but don't change any functionality
+if (typeof window !== 'undefined') {
+  initPolyfills();
+}
 
 type SpeechOptions = {
   rate?: number;

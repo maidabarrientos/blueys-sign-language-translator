@@ -2,6 +2,12 @@ import * as tf from "@tensorflow/tfjs";
 import "@tensorflow/tfjs-backend-webgl";
 import * as handpose from "@tensorflow-models/handpose";
 import { loadModel, saveModel, predictSign, trainModel } from "@/lib/sign-language-model";
+import { setupAbortSignalPolyfill } from "./polyfills";
+
+// Initialize polyfills
+if (typeof window !== 'undefined') {
+  setupAbortSignalPolyfill();
+}
 
 export class SignLanguageModel {
   private model: tf.LayersModel | null = null;
@@ -96,6 +102,18 @@ export class SignLanguageModel {
     }
   }
 
+  // Use a safe version of AbortSignal.timeout in the fetch call
+  private safeCreateTimeout = () => {
+    if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) {
+      return AbortSignal.timeout(10000);
+    } else {
+      // Fallback for browsers without AbortSignal.timeout
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 10000);
+      return controller.signal;
+    }
+  };
+
   async detectSign(video: HTMLVideoElement): Promise<{ gesture: string; confidence: number; handLandmarks?: number[][] } | null> {
     if (!this.handposeModel) {
       return null;
@@ -143,7 +161,7 @@ export class SignLanguageModel {
                 image: frameBase64
               }),
               // Add timeout to prevent hanging requests
-              signal: AbortSignal.timeout(10000)
+              signal: this.safeCreateTimeout()
             });
             
             if (response.ok) {
