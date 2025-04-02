@@ -26,6 +26,7 @@ export function SignLanguageDetector() {
   const [currentLabel, setCurrentLabel] = useState<string>('');
   const [showTraining, setShowTraining] = useState(false);
   const [initStatus, setInitStatus] = useState<string>('');
+  const [handDetected, setHandDetected] = useState(false);
 
   useEffect(() => {
     const initializeDetector = async () => {
@@ -59,12 +60,20 @@ export function SignLanguageDetector() {
 
     try {
       const result = await detector.detectSign(webcamRef.current.video);
+      setHandDetected(detector.isHandCurrentlyDetected());
+      
       if (result) {
         setDetection({
           gesture: result.gesture,
           confidence: result.confidence,
           handLandmarks: result.handLandmarks
         });
+      } else if (detector.isHandCurrentlyDetected()) {
+        // Hand detected but no gesture recognized
+        setDetection(null);
+      } else {
+        // No hand detected
+        setDetection(null);
       }
     } catch (error) {
       console.error('Detection error:', error);
@@ -200,7 +209,7 @@ export function SignLanguageDetector() {
           <div className="h-full rounded-xl bg-zinc-900 border-4 border-zinc-800 shadow-[0_0_0_4px_rgba(255,255,255,0.1)] p-6">
             <div className="flex flex-col h-full">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-2 h-2 rounded-full bg-green-500" />
+                <div className={`w-2 h-2 rounded-full ${handDetected ? 'bg-green-500' : 'bg-yellow-500'}`} />
                 <span className="text-sm text-white/80 font-mono">TRANSLATION</span>
               </div>
 
@@ -215,7 +224,9 @@ export function SignLanguageDetector() {
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-white/50 font-mono">
-                  Waiting for signs...
+                  {handDetected 
+                    ? "Processing sign..." 
+                    : "No hand detected. Please show your hand to the camera."}
                 </div>
               )}
             </div>
